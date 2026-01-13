@@ -1,0 +1,9 @@
+[package]
+name = "editor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mlua = { version = "0.11.5", features = ["lua54", "vendored"] }
+sdl2 = { version = "0.38.0", features = ["ttf"] }
+fontconfig = "0.10.0"
