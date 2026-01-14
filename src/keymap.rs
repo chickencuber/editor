@@ -5,6 +5,12 @@ use sdl2::keyboard::{Keycode, Mod};
 
 use crate::pane::Mode;
 
+#[derive(Debug, Clone)]
+pub enum Action {
+    Function(Function),
+    Macro(String),
+}
+
 pub fn parse_keys(input: &str, leader:char) -> Vec<Key> {
     let mut out = Vec::new();
     let mut chars = input.chars().peekable();
@@ -38,6 +44,10 @@ pub fn parse_section(name: &str, leader: char) -> Key {
             key: Keys::Char('>'),
             ..Default::default()
         },
+        "bs"=> Key{
+            key: Keys::Backspace,
+            ..Default::default()
+        },
         "lt"=> Key{
             key:Keys::Char('<'),
             ..Default::default()
@@ -60,6 +70,22 @@ pub fn parse_section(name: &str, leader: char) -> Key {
         },
         "leader"=>Key {
             key:Keys::Char(leader),
+            ..Default::default()
+        },
+        "left"=>Key {
+            key:Keys::Left,
+            ..Default::default()
+        },
+        "right"=>Key {
+            key:Keys::Right,
+            ..Default::default()
+        },
+        "up"=>Key {
+            key:Keys::Up,
+            ..Default::default()
+        },
+        "down"=>Key {
+            key:Keys::Down,
             ..Default::default()
         },
         other => {
@@ -104,6 +130,39 @@ pub struct Key{
 
 }
 
+type Event = (Keycode, Mod);
+
+impl Key {
+    fn to_event(&self) -> Event {
+        let mut keymod = Mod::NOMOD;
+        if self.alt {
+            keymod = keymod|Mod::LALTMOD;    
+        } 
+        if self.shift {
+            keymod = keymod|Mod::LSHIFTMOD;    
+        } 
+        if self.ctrl{
+            keymod = keymod|Mod::LCTRLMOD;    
+        } 
+        let keycode = match self.key {
+            Keys::Esc => Keycode::ESCAPE,
+            Keys::Tab => Keycode::TAB,
+            Keys::CR => Keycode::Return,
+            Keys::Up => Keycode::Up,
+            Keys::Left => Keycode::Left,
+            Keys::Right => Keycode::Right,
+            Keys::Down => Keycode::Down,
+            Keys::Backspace => Keycode::Backspace,
+            Keys::Unknown => panic!("nope"),
+            Keys::Char(' ') => Keycode::Space,
+            Keys::Char(c) => {
+                Keycode::from_name(&c.to_string()).unwrap()
+            }
+        };
+        return (keycode, keymod);
+    }
+}
+
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum Keys {
     Char(char),
@@ -111,6 +170,11 @@ pub enum Keys {
     Tab,
     CR,
     Unknown,
+    Left,
+    Right,
+    Up,
+    Down,
+    Backspace,
 }
 
 
@@ -121,6 +185,11 @@ impl From<Keycode> for Keys {
            Keycode::Escape => Keys::Esc,
            Keycode::RETURN => Keys::CR,
            Keycode::Space=>Keys::Char(' '),
+           Keycode::Left=>Keys::Left,
+           Keycode::Right=>Keys::Right,
+           Keycode::Up=>Keys::Up,
+           Keycode::BACKSPACE => Keys::Backspace,
+           Keycode::Down=>Keys::Down,
            _ => {
                let c = format!("{}", value);
                if c.len() > 1 {
@@ -144,6 +213,7 @@ pub struct Keymaps {
     keymaps: HashMap<Mode, Keymap>,
     last: Option<Instant>,
     pos: Vec<Key>,
+    pub events: Vec<Event>,
 }
 
 impl Keymaps {
@@ -152,9 +222,10 @@ impl Keymaps {
             keymaps: HashMap::new(),
             last: None,
             pos: Vec::new(),
+            events: Vec::new(),
         }
     }
-    pub fn set(&mut self, mode: String, keys: String, func: Function, leader: char) {
+    pub fn set(&mut self, mode: String, keys: String, func: Action, leader: char) {
         let modes: Vec<Mode> = mode.chars().map(Mode::from).collect();
         for mode in modes {
             if !self.keymaps.contains_key(&mode) {
@@ -166,8 +237,12 @@ impl Keymaps {
     //TASK(20260112-210317-316-n6-047): make leader work
     pub fn handle(&mut self, mode: Mode, key: Keycode, keymod: Mod) {
         let ctrl  = keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD);
-        let shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
+        let mut shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
         let alt   = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
+
+        if keymod.intersects(Mod::CAPSMOD) {
+            shift = !shift;
+        }
 
         let key = Key {
             key: Keys::from(key),
@@ -189,9 +264,11 @@ impl Keymaps {
         };
 
         let mut action_to_call = None;
+        let mut exit = false;
 
         for p in self.pos.iter() {
             if !s.child.contains_key(p) {
+                exit = true;
                 action_to_call = s.action.clone();
                 break;
             }
@@ -202,13 +279,31 @@ impl Keymaps {
             action_to_call = s.action.clone();
             self.pos.clear();
             self.last = None;
+            exit = false;
         }
 
         if let Some(func) = action_to_call {
             self.pos.clear();
             self.last = None;
-            func.call::<()>(()).unwrap();
+            exit = false;
+            match func {
+                Action::Function(f) => {
+                    f.call::<()>(()).unwrap();
+                }
+                Action::Macro(m) => {
+                    self.call_macro(m);
+                }
+            }
         }
+        if exit {
+            self.pos.clear();
+            self.last = None;
+        }
+    }
+    pub fn call_macro(&mut self, m: String) {
+        let keys = parse_keys(&m, ' ');
+        let event: Vec<Event> = keys.iter().map(|v| v.to_event()).collect();
+        self.events.splice(0..0, event);
     }
 
     pub fn handle_timeout(&mut self, mode: Mode, timeout: u64) {
@@ -242,7 +337,14 @@ impl Keymaps {
         self.last = None;
 
         if let Some(func) = action_to_call {
-            func.call::<()>(()).unwrap();
+            match func {
+                Action::Function(f) => {
+                    f.call::<()>(()).unwrap();
+                }
+                Action::Macro(m) => {
+                    self.call_macro(m);
+                }
+            }
         }
     }
 }
@@ -250,7 +352,7 @@ impl Keymaps {
 
 #[derive(Debug)]
 pub struct Keymap {
-    action: Option<Function>, 
+    action: Option<Action>, 
     child: HashMap<Key, Self>,
 }
 
@@ -262,7 +364,7 @@ impl Keymap {
             child: HashMap::new(),
         }
     }
-    pub fn set(&mut self, keys: String, func: Function, leader: char) {
+    pub fn set(&mut self, keys: String, func: Action, leader: char) {
         let keys = parse_keys(&keys, leader);
         if keys.len() == 0 {
             return
