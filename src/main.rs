@@ -9,11 +9,11 @@ fn first<T>(vec: &mut Vec<T>) -> Option<T> {
     return Some(vec.remove(0))
 }
 
-use keymap::{Keymaps, parse_keys};
+use keymap::Keymaps;
 
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
-use mlua::{Error, Function, Lua, Result, UserData, Value};
+use mlua::{Error, Function, UserData, Value, Lua};
 use sdl2::{
     event::Event, keyboard::{Keycode, Mod}, pixels::{
         Color,
@@ -241,6 +241,10 @@ impl UserData for Config {
             }
             return Ok(());
         });
+        methods.add_method_mut("cmd", |_, this, s: String| {
+            this.keymap.call_macro(s);
+            Ok(())
+        });
     }
 }
 
@@ -293,20 +297,20 @@ pub fn main() {
                         break 'running
                     },
                     Event::KeyDown {keycode: Some(keycode), keymod,..} => {
-                        config.keymap.events.push((keycode, keymod, None));
+                        config.keymap.events.push((keycode, keymod, None, false));
                     },
                     Event::TextInput { text, .. } => {
                         if let Some(f) = config.keymap.events.last_mut() {
                             f.2 = Some(text);
                         } else {
-                            config.keymap.events.push((Keycode::KP_0, Mod::NOMOD, Some(text)));
+                            config.keymap.events.push((Keycode::KP_0, Mod::NOMOD, Some(text), false));
                         }
                     }
                     _ => {}
                 }
             }
-            while let Some((keycode, keymod, text)) = first(&mut config.keymap.events) {
-                pane.handle_events(&mut config, &mut fonts, keycode, keymod, text);
+            if let Some((keycode, keymod, text, finish)) = first(&mut config.keymap.events) {
+                pane.handle_events(&mut config, &mut fonts, keycode, keymod, text, finish);
             }
             config.keymap.handle_timeout(config.mode.clone(), config.command_timeout);
             canvas.present();

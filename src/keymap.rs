@@ -127,12 +127,19 @@ pub struct Key{
     shift: bool,
     ctrl: bool,
     key: Keys,
-
 }
 
-type Event = (Keycode, Mod, Option<String>);
+type Event = (Keycode, Mod, Option<String>, bool);
 
 impl Key {
+    fn finish() -> Self {
+        Self {
+            alt: false,
+            shift: false,
+            ctrl: false,
+            key: Keys::Finish,
+        }
+    }
     fn to_event(&self) -> Event {
         let mut keymod = Mod::NOMOD;
         if self.alt {
@@ -145,6 +152,7 @@ impl Key {
             keymod = keymod|Mod::LCTRLMOD;    
         } 
         let mut text = None;
+        let mut finish = false;
         let keycode = match self.key {
             Keys::Esc => Keycode::ESCAPE,
             Keys::Tab => Keycode::TAB,
@@ -155,13 +163,21 @@ impl Key {
             Keys::Down => Keycode::Down,
             Keys::Backspace => Keycode::Backspace,
             Keys::Unknown => panic!("nope"),
+            Keys::Finish => {
+                finish = true;
+                Keycode::KP_0
+            },
             Keys::Char(' ') => Keycode::Space,
             Keys::Char(c) => {
                 text = Some(c.to_string());
-                Keycode::from_name(&c.to_string()).unwrap()
+                if let Some(s) = Keycode::from_name(&c.to_string()) {
+                    s
+                } else {
+                    Keycode::KP_0
+                }
             }
         };
-        return (keycode, keymod, text);
+        return (keycode, keymod, text, finish);
     }
 }
 
@@ -177,6 +193,7 @@ pub enum Keys {
     Up,
     Down,
     Backspace,
+    Finish,
 }
 
 
@@ -238,7 +255,7 @@ impl Keymaps {
         }
     }
     //TASK(20260112-210317-316-n6-047): make leader work
-    pub fn handle(&mut self, mode: Mode, key: Keycode, keymod: Mod, text: Option<String>) {
+    pub fn handle(&mut self, mode: Mode, key: Keycode, keymod: Mod, text: Option<String>, finish: bool) {
         let ctrl  = keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD);
         let mut shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
         let alt   = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
@@ -280,11 +297,11 @@ impl Keymaps {
         let mut exit = false;
 
         for p in self.pos.iter_mut() {
-            if !s.child.contains_key(p) {
+            if (!s.child.contains_key(p)) || finish {
                 p.alt = false;
                 p.shift = false;
                 p.ctrl = false;
-                if !s.child.contains_key(p) {
+                if (!s.child.contains_key(p)) || finish {
                     exit = true;
                     action_to_call = s.action.clone();
                     break;
@@ -322,7 +339,8 @@ impl Keymaps {
     }
     pub fn call_macro(&mut self, m: String) {
         let keys = parse_keys(&m, ' ');
-        let event: Vec<Event> = keys.iter().map(|v| v.to_event()).collect();
+        let mut event: Vec<Event> = keys.iter().map(|v| v.to_event()).collect();
+        event.push(Key::finish().to_event());
         self.events.splice(0..0, event);
     }
 

@@ -69,3 +69,8 @@ config:key("n", "dd", function()
     end)
 end)
 
+
+config:key("n", "o", "$a<CR><Esc>")
+
+config:key("n", "O", "0i<CR><Esc>k")
+

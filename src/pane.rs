@@ -333,7 +333,7 @@ impl Pane {
             _=>{}
         }
     }
-    pub fn handle_events(&mut self, config: &mut Config, fonts: &mut Fonts, keycode: Keycode, keymod: Mod, text: Option<String>) {
+    pub fn handle_events(&mut self, config: &mut Config, fonts: &mut Fonts, keycode: Keycode, keymod: Mod, text: Option<String>, finish: bool) {
         match &mut self.buf {
             BufType::Text{..} => {
                 if let Mode::Insert = config.mode {
@@ -357,11 +357,12 @@ impl Pane {
                         _ => {
                             if let Some(str) = &text {
                                 self.insert_char(str.chars().nth(0).unwrap(), config, fonts);
+                                return;
                             }
                         }
                     }
                 }
-                config.keymap.handle(config.mode.clone(), keycode, keymod, text);
+                config.keymap.handle(config.mode.clone(), keycode, keymod, text, finish);
             }
             _=>{}
         }
