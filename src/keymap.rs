@@ -130,7 +130,7 @@ pub struct Key{
 
 }
 
-type Event = (Keycode, Mod);
+type Event = (Keycode, Mod, Option<String>);
 
 impl Key {
     fn to_event(&self) -> Event {
@@ -144,6 +144,7 @@ impl Key {
         if self.ctrl{
             keymod = keymod|Mod::LCTRLMOD;    
         } 
+        let mut text = None;
         let keycode = match self.key {
             Keys::Esc => Keycode::ESCAPE,
             Keys::Tab => Keycode::TAB,
@@ -156,10 +157,11 @@ impl Key {
             Keys::Unknown => panic!("nope"),
             Keys::Char(' ') => Keycode::Space,
             Keys::Char(c) => {
+                text = Some(c.to_string());
                 Keycode::from_name(&c.to_string()).unwrap()
             }
         };
-        return (keycode, keymod);
+        return (keycode, keymod, text);
     }
 }
 
@@ -178,8 +180,8 @@ pub enum Keys {
 }
 
 
-impl From<Keycode> for Keys {
-    fn from(value: Keycode) -> Self {
+impl Keys {
+    fn from(value: Keycode, text: Option<String>) -> Self {
        match value {
            Keycode::Tab => Keys::Tab,
            Keycode::Escape => Keys::Esc,
@@ -191,11 +193,10 @@ impl From<Keycode> for Keys {
            Keycode::BACKSPACE => Keys::Backspace,
            Keycode::Down=>Keys::Down,
            _ => {
-               let c = format!("{}", value);
-               if c.len() > 1 {
-                   return Self::Unknown;
+               if let Some(c) = text {
+                   return Keys::Char(c.to_lowercase().chars().nth(0).unwrap());
                }
-               return Keys::Char(c.to_lowercase().chars().nth(0).unwrap());
+               return Self::Unknown;
            }
        } 
     }
@@ -213,6 +214,7 @@ pub struct Keymaps {
     keymaps: HashMap<Mode, Keymap>,
     last: Option<Instant>,
     pos: Vec<Key>,
+    pub count: String,
     pub events: Vec<Event>,
 }
 
@@ -223,6 +225,7 @@ impl Keymaps {
             last: None,
             pos: Vec::new(),
             events: Vec::new(),
+            count:String::new(),
         }
     }
     pub fn set(&mut self, mode: String, keys: String, func: Action, leader: char) {
@@ -235,7 +238,7 @@ impl Keymaps {
         }
     }
     //TASK(20260112-210317-316-n6-047): make leader work
-    pub fn handle(&mut self, mode: Mode, key: Keycode, keymod: Mod) {
+    pub fn handle(&mut self, mode: Mode, key: Keycode, keymod: Mod, text: Option<String>) {
         let ctrl  = keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD);
         let mut shift = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
         let alt   = keymod.intersects(Mod::LALTMOD | Mod::RALTMOD);
@@ -245,11 +248,20 @@ impl Keymaps {
         }
 
         let key = Key {
-            key: Keys::from(key),
+            key: Keys::from(key, text),
             ctrl,
             shift,
             alt,
         };
+        if let Keys::Char(v) = key.key {
+            if v.is_numeric() {
+                if !(v == '0' && self.count.len() == 0) {
+                    self.count.push(v); 
+                    self.last = Some(Instant::now());
+                    return;
+                }
+            }
+        }
 
         if self.pos.is_empty() {
             self.last = Some(Instant::now());
@@ -259,6 +271,7 @@ impl Keymaps {
 
         let Some(mut s) = self.keymaps.get(&mode) else {
             self.pos.clear();
+            self.count = "".to_string();
             self.last = None;
             return;
         };
@@ -266,11 +279,16 @@ impl Keymaps {
         let mut action_to_call = None;
         let mut exit = false;
 
-        for p in self.pos.iter() {
+        for p in self.pos.iter_mut() {
             if !s.child.contains_key(p) {
-                exit = true;
-                action_to_call = s.action.clone();
-                break;
+                p.alt = false;
+                p.shift = false;
+                p.ctrl = false;
+                if !s.child.contains_key(p) {
+                    exit = true;
+                    action_to_call = s.action.clone();
+                    break;
+                }
             }
             s = s.child.get(p).unwrap();
         }
@@ -294,9 +312,11 @@ impl Keymaps {
                     self.call_macro(m);
                 }
             }
+            self.count = "".to_string();
         }
         if exit {
             self.pos.clear();
+            self.count = "".to_string();
             self.last = None;
         }
     }
@@ -311,6 +331,7 @@ impl Keymaps {
 
         let Some(mut s) = self.keymaps.get(&mode) else {
             self.pos.clear();
+            self.count = "".to_string();
             self.last = None;
             return;
         };
@@ -321,10 +342,15 @@ impl Keymaps {
 
         let mut action_to_call = None;
 
-        for p in self.pos.iter() {
+        for p in self.pos.iter_mut() {
             if !s.child.contains_key(p) {
-                action_to_call = s.action.clone();
-                break;
+                p.alt = false;
+                p.shift = false;
+                p.ctrl = false;
+                if !s.child.contains_key(p) {
+                    action_to_call = s.action.clone();
+                    break;
+                }
             }
             s = s.child.get(p).unwrap();
         }
@@ -346,6 +372,7 @@ impl Keymaps {
                 }
             }
         }
+        self.count = "".to_string();
     }
 }
 

@@ -201,6 +201,11 @@ impl UserData for Config {
             this.mode = Mode::from(value);
             Ok(())
         });
+        fields.add_field_method_get("count", |_, this| Ok(this.keymap.count.parse::<usize>().unwrap_or(1)));
+        fields.add_field_method_set("count", |_, this, value: usize| {
+            this.keymap.count = value.to_string();
+            Ok(())
+        });
     }
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method_mut("key", |_, this, (mode, keys, val): (String, Value, Value)| {
@@ -288,13 +293,20 @@ pub fn main() {
                         break 'running
                     },
                     Event::KeyDown {keycode: Some(keycode), keymod,..} => {
-                        pane.handle_events(&mut config, &mut fonts, keycode, keymod);
+                        config.keymap.events.push((keycode, keymod, None));
                     },
+                    Event::TextInput { text, .. } => {
+                        if let Some(f) = config.keymap.events.last_mut() {
+                            f.2 = Some(text);
+                        } else {
+                            config.keymap.events.push((Keycode::KP_0, Mod::NOMOD, Some(text)));
+                        }
+                    }
                     _ => {}
                 }
             }
-            while let Some((keycode, keymod)) = first(&mut config.keymap.events) {
-                pane.handle_events(&mut config, &mut fonts, keycode, keymod);
+            while let Some((keycode, keymod, text)) = first(&mut config.keymap.events) {
+                pane.handle_events(&mut config, &mut fonts, keycode, keymod, text);
             }
             config.keymap.handle_timeout(config.mode.clone(), config.command_timeout);
             canvas.present();

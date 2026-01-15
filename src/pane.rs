@@ -1,6 +1,5 @@
 use mlua::UserData;
-use sdl2::{keyboard::{Keycode, Mod}, pixels::{Color, PixelFormatEnum}, rect::Rect, render::{BlendMode, RenderTarget, Texture, TextureCreator}, surface::Surface, ttf::FontStyle, video::WindowContext
-};
+use sdl2::{keyboard::{Keycode, Mod}, pixels::{Color, PixelFormatEnum}, rect::Rect, render::{BlendMode, RenderTarget, Texture, TextureCreator}, surface::Surface, ttf::FontStyle, video::WindowContext};
 
 type Canvas = sdl2::render::Canvas<sdl2::video::Window>;
 
@@ -334,7 +333,7 @@ impl Pane {
             _=>{}
         }
     }
-    pub fn handle_events(&mut self, config: &mut Config, fonts: &mut Fonts, keycode: Keycode, keymod: Mod) {
+    pub fn handle_events(&mut self, config: &mut Config, fonts: &mut Fonts, keycode: Keycode, keymod: Mod, text: Option<String>) {
         match &mut self.buf {
             BufType::Text{..} => {
                 if let Mode::Insert = config.mode {
@@ -356,24 +355,13 @@ impl Pane {
                             return;
                         }
                         _ => {
-                            let mut str = format!("{}", keycode);
-                            if str.len() == 1 {
-                                let mut cap = keymod.intersects(Mod::RSHIFTMOD | Mod::LSHIFTMOD);
-                                if keymod.intersects(Mod::CAPSMOD) {
-                                    cap = !cap;
-                                }
-                                if cap {
-                                    str = str.to_uppercase();
-                                } else {
-                                    str = str.to_lowercase();
-                                }
+                            if let Some(str) = &text {
                                 self.insert_char(str.chars().nth(0).unwrap(), config, fonts);
-                                return;
                             }
                         }
                     }
                 }
-                config.keymap.handle(config.mode.clone(), keycode, keymod);
+                config.keymap.handle(config.mode.clone(), keycode, keymod, text);
             }
             _=>{}
         }
@@ -393,6 +381,14 @@ impl UserData for Pane {
         methods.add_method_mut("delete_line", |_, this, ()| {
             Ok(this.delete_line())
         });
+        methods.add_method("linelen", |_, this, (line,): (usize,)| {
+            Ok(match &this.buf {
+                BufType::Text{buf, ..} => {
+                    buf[line].cells.len()
+                }
+                _ => 0
+            })
+        })
     }
 }
 
