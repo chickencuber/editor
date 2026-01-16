@@ -95,9 +95,9 @@ impl TextCell {
         let mut s = None;
         if self.char != '\t' {
             if inver {
-                s = Some(font.render_char(self.char).solid(self.bg.unwrap_or(config.bg)).unwrap());
+                s = Some(font.render_char(self.char).blended(self.bg.unwrap_or(config.bg)).unwrap());
             } else {
-                s = Some(font.render_char(self.char).solid(self.fg).unwrap()); 
+                s = Some(font.render_char(self.char).blended(self.fg).unwrap()); 
             }
         }
         let rect = Rect::new(*x, y, w, h);
@@ -128,6 +128,7 @@ pub enum CursorType {
     Block,
     Line,
     Underline,
+    Hollow_Block,
 }
 
 impl CursorType {
@@ -143,6 +144,10 @@ impl CursorType {
             }
             Self::Underline => {
                 let rect = Rect::new(x, y + h as i32 - 2, w, 2);
+                let _ = canvas.fill_rect(rect);
+            }
+            Self::Hollow_Block => {
+                let rect = Rect::new(x, y, w, h);
                 let _ = canvas.fill_rect(rect);
             }
         }
@@ -366,6 +371,9 @@ impl Pane {
             }
             _=>{}
         }
+    }
+    pub fn position(&mut self, x: i32, y: i32, w: u32, h: u32) {
+        self.rect = Rect::new(x, y, w, h);
     }
 }
 

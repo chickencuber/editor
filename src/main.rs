@@ -44,6 +44,12 @@ fn xdg_config_home() -> PathBuf {
     }
 }
 
+fn config_dir() -> PathBuf {
+    let mut path = xdg_config_home();
+    path.push("editor");
+    path
+}
+
 struct Panes {
     panes: Vec<Pane>,
     current_pane: usize,
@@ -92,6 +98,8 @@ struct Config {
     bg: Color,
     text: Color,
 
+    border: u32,
+
     tabs: Option<usize>,
     tab_display: usize,
 
@@ -125,6 +133,8 @@ impl Config {
                 "Arial",
                 "Sans",
             ]),
+
+            border: 10,
 
             font_size: 20,
 
@@ -206,6 +216,8 @@ impl UserData for Config {
             this.keymap.count = value.to_string();
             Ok(())
         });
+        fields.add_field_method_get("border", |_, this| Ok(this.border));
+        fields.add_field_method_set("border", |_, this, value: u32| Ok({this.border = value;}));
     }
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method_mut("key", |_, this, (mode, keys, val): (String, Value, Value)| {
@@ -264,7 +276,6 @@ pub fn main() {
         .build()
         .unwrap();
 
-    panes.panes.push(Pane::text(Rect::new(10, 10, 400, 400), 0, config.bg));
 
     lua.scope(|scope| {
         unsafe{
@@ -276,7 +287,18 @@ pub fn main() {
             let ud = scope.create_userdata_ref_mut(&mut *p)?;
             lua.globals().set("panes", ud)?;
         }
+        lua.load(&format!(
+                r#"
+                package.path = "{0}/lua/?.lua;{0}/lua/?/init.lua;" .. package.path
+                "#,
+                config_dir().to_str().unwrap()
+        )).exec()?;
         lua.load(include_str!("./default.lua")).exec()?;
+        let init_file = config_dir().join("init.lua");
+        if init_file.exists() {
+            lua.load(&std::fs::read_to_string(&init_file)?).exec()?;
+        }
+        panes.panes.push(Pane::text(Rect::new(0, 0, 1, 1), 0, config.bg));
         let mut canvas = window.into_canvas().build().unwrap();
 
         let mut event_pump = sdl_context.event_pump().unwrap();
@@ -286,6 +308,8 @@ pub fn main() {
             canvas.clear();
 
             for pane in panes.panes.iter_mut() {
+                let (w, h) = canvas.window().size();
+                pane.position(config.border as i32, config.border as i32, w - config.border*2, h - config.border*2);
                 pane.fix_cursor(&config, &mut fonts);
                 pane.render(&mut canvas, &mut fonts, &config);
             }
