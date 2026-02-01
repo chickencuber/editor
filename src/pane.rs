@@ -209,7 +209,7 @@ impl Pane {
                 canvas.set_draw_color(self.bg);
                 canvas.fill_rect(self.rect).unwrap();
 
-                let mut y = self.rect.x;
+                let mut y = self.rect.y;
                 let mut i = 0;
                 for line in buf.iter() {
                     line.render(canvas, &mut y, fonts, cursor, i, self.rect.y, config);
